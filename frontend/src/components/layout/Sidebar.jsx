@@ -43,11 +43,11 @@ export default function Sidebar({ open, onClose }) {
       )}
       <motion.aside
         initial={false}
-        animate={{ x: 0 }}
+        animate={{ x: open ? 0 : "-100%" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
         className={cn(
           "fixed z-40 inset-y-0 left-0 w-64 gradient-bg text-white flex flex-col",
-          "transition-transform duration-300 lg:translate-x-0 lg:static lg:z-0",
-          open ? "translate-x-0" : "-translate-x-full"
+          "lg:translate-x-0 lg:static lg:z-0"
         )}
       >
         <div className="flex items-center justify-between px-5 py-5">
