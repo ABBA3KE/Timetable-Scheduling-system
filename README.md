@@ -1,4 +1,4 @@
-# UniSchedule — Lecture Timetable Scheduling System
+# University Schedule — Lecture Timetable Scheduling System
 
 A full-stack MERN application that automatically generates conflict-free lecture
 timetables using a **Constraint Satisfaction Problem (CSP) solved with Backtracking
