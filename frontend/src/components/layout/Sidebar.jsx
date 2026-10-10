@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -32,22 +33,40 @@ const STUDENT_LINKS = [
 
 const LINKS_BY_ROLE = { admin: ADMIN_LINKS, lecturer: LECTURER_LINKS, student: STUDENT_LINKS };
 
+function useIsDesktop() {
+  const query = "(min-width: 1024px)";
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false
+  );
+
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const handler = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mql.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  return isDesktop;
+}
+
 export default function Sidebar({ open, onClose }) {
   const { user } = useAuth();
   const links = LINKS_BY_ROLE[user?.role] || [];
+  const isDesktop = useIsDesktop();
 
   return (
     <>
-      {open && (
+      {open && !isDesktop && (
         <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />
       )}
       <motion.aside
         initial={false}
-        animate={{ x: open ? 0 : "-100%" }}
+        animate={{ x: isDesktop || open ? 0 : "-100%" }}
         transition={{ duration: 0.3, ease: "easeOut" }}
         className={cn(
           "fixed z-40 inset-y-0 left-0 w-64 gradient-bg text-white flex flex-col",
-          "lg:translate-x-0 lg:static lg:z-0"
+          "lg:static lg:z-0 lg:shrink-0"
         )}
       >
         <div className="flex items-center justify-between px-5 py-5">
@@ -81,14 +100,14 @@ export default function Sidebar({ open, onClose }) {
                 )
               }
             >
-              <Icon className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+              <Icon className="h-[18px] w-[18px]" />
               {label}
             </NavLink>
           ))}
         </nav>
 
         <div className="p-4 text-[11px] text-blue-200/50 border-t border-white/10">
-          &copy; {new Date().getFullYear()} UniSchedule
+          &copy; {new Date().getFullYear()} lecture timetable system
         </div>
       </motion.aside>
     </>

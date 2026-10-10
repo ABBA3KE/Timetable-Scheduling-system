@@ -54,7 +54,7 @@ export default function Register() {
           <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-navy-400 to-navy-700 shadow-glow">
             <CalendarClock className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold">UniSchedule</h1>
+          <h1 className="text-2xl font-bold">Lecture Timetable</h1>
           <p className="text-sm text-blue-200/70">Create your account</p>
         </div>
 
