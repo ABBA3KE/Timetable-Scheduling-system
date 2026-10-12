@@ -1,5 +1,9 @@
 import asyncHandler from "express-async-handler";
+import mongoose from "mongoose";
 import User from "../models/User.js";
+import Department from "../models/Department.js";
+import Programme from "../models/Programme.js";
+import Level from "../models/Level.js";
 import { generateToken } from "../utils/generateToken.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logActivity } from "./activityLogController.js";
@@ -22,6 +26,16 @@ const publicUser = (user) => ({
   isClassRep: user.isClassRep,
 });
 
+export const getRegistrationOptions = asyncHandler(async (_req, res) => {
+  const [departments, programmes, levels] = await Promise.all([
+    Department.find().sort({ name: 1 }),
+    Programme.find().populate("department", "name code").sort({ name: 1 }),
+    Level.find().sort({ name: 1 }),
+  ]);
+
+  res.json({ success: true, data: { departments, programmes, levels } });
+});
+
 // @route POST /api/auth/register   (public self-registration - account is
 // active immediately and the response logs the user straight in, exactly
 // like /login, so they land on their role's dashboard right away.)
@@ -35,7 +49,7 @@ export const register = asyncHandler(async (req, res) => {
   if (!fullName || !email || !password || !role) {
     throw new ApiError(400, "Full name, email, password, and role are required");
   }
-  if (!["admin", "lecturer", "student"].includes(role)) {
+  if (!["lecturer", "student"].includes(role)) {
     throw new ApiError(400, "Invalid role");
   }
   if (password.length < 6) {
@@ -44,6 +58,27 @@ export const register = asyncHandler(async (req, res) => {
 
   const exists = await User.findOne({ email: email.toLowerCase() });
   if (exists) throw new ApiError(400, "An account with this email already exists");
+
+  if (role === "student") {
+    if (!department || !programme || !level) {
+      throw new ApiError(400, "Department, programme, and level are required for students");
+    }
+    if (![department, programme, level].every(mongoose.Types.ObjectId.isValid)) {
+      throw new ApiError(400, "Please select valid department, programme, and level options");
+    }
+
+    const [departmentRecord, programmeRecord, levelRecord] = await Promise.all([
+      Department.findById(department),
+      Programme.findById(programme),
+      Level.findById(level),
+    ]);
+    if (!departmentRecord || !programmeRecord || !levelRecord) {
+      throw new ApiError(400, "One or more selected academic options no longer exist");
+    }
+    if (String(programmeRecord.department) !== String(department)) {
+      throw new ApiError(400, "The selected programme does not belong to the selected department");
+    }
+  }
 
   const user = await User.create({
     fullName, email, password, role, phone,

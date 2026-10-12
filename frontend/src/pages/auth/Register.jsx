@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { User, Mail, Lock, Phone, CalendarClock, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 
 const emptyForm = {
@@ -16,8 +17,37 @@ export default function Register() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [options, setOptions] = useState({ departments: [], programmes: [], levels: [] });
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState("");
 
-  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+  useEffect(() => {
+    let active = true;
+    api.get("/auth/registration-options")
+      .then(({ data }) => {
+        if (active) setOptions(data.data);
+      })
+      .catch((err) => {
+        if (active) setOptionsError(err.response?.data?.message || "Unable to load academic options.");
+      })
+      .finally(() => {
+        if (active) setOptionsLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const set = (key) => (e) => {
+    const value = e.target.value;
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+      ...(key === "department" ? { programme: "" } : {}),
+    }));
+  };
+
+  const programmes = options.programmes.filter(
+    (programme) => String(programme.department?._id || programme.department) === form.department
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,15 +133,39 @@ export default function Register() {
                 <select className="input-field" value={form.role} onChange={set("role")}>
                   <option value="student">Student</option>
                   <option value="lecturer">Lecturer</option>
-                  <option value="admin">Administrator</option>
                 </select>
               </div>
 
               {form.role === "student" && (
-                <div className="col-span-2">
-                  <label className="mb-1.5 block text-sm font-medium">Matric Number</label>
-                  <input className="input-field" value={form.matricNumber} onChange={set("matricNumber")} />
-                </div>
+                <>
+                  <div className="col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium">Matric Number</label>
+                    <input required className="input-field" value={form.matricNumber} onChange={set("matricNumber")} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium">Department</label>
+                    <select required className="input-field" value={form.department || ""} onChange={set("department")} disabled={optionsLoading || !!optionsError}>
+                      <option value="">Select department</option>
+                      {options.departments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Programme</label>
+                    <select required className="input-field" value={form.programme || ""} onChange={set("programme")} disabled={!form.department || optionsLoading || !!optionsError}>
+                      <option value="">Select programme</option>
+                      {programmes.map((programme) => <option key={programme._id} value={programme._id}>{programme.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Level</label>
+                    <select required className="input-field" value={form.level || ""} onChange={set("level")} disabled={optionsLoading || !!optionsError}>
+                      <option value="">Select level</option>
+                      {options.levels.map((level) => <option key={level._id} value={level._id}>{level.name}</option>)}
+                    </select>
+                  </div>
+                  {optionsLoading && <p className="col-span-2 text-sm text-slate-500">Loading academic options...</p>}
+                  {optionsError && <p role="alert" className="col-span-2 text-sm text-rose-600">{optionsError}</p>}
+                </>
               )}
 
               {form.role === "lecturer" && (
@@ -138,7 +192,7 @@ export default function Register() {
               </motion.p>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full">
+            <button type="submit" disabled={loading || (form.role === "student" && (optionsLoading || !!optionsError))} className="btn-primary w-full">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Account"}
             </button>
           </form>

@@ -10,11 +10,13 @@ export default function StudentDashboard() {
   const { user } = useAuth();
   const [timetable, setTimetable] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api
       .get("/timetables/student/me")
       .then(({ data }) => setTimetable(data.data))
+      .catch((err) => setError(err.response?.data?.message || "Unable to load your timetable."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,6 +37,8 @@ export default function StudentDashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)
+        ) : error ? (
+          <p role="alert" className="col-span-full rounded-lg border border-rose-300 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">{error}</p>
         ) : (
           <>
             <StatCard icon={BookOpen} label="Registered Courses" value={uniqueCourses.length} gradient="from-blue-500 to-navy-700" />
@@ -48,7 +52,9 @@ export default function StudentDashboard() {
         <h3 className="mb-4 flex items-center gap-2 font-semibold">
           <Clock className="h-4 w-4" /> Today's Classes ({today})
         </h3>
-        {todaysClasses.length === 0 ? (
+        {error ? (
+          <p role="alert" className="py-8 text-center text-sm text-rose-600 dark:text-rose-400">{error}</p>
+        ) : todaysClasses.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-400">No classes scheduled for today.</p>
         ) : (
           <div className="space-y-2">

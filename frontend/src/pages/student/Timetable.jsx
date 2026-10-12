@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, Phone, X } from "lucide-react";
+import { CalendarClock, Download, Phone } from "lucide-react";
 import api from "../../api/axios";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import TimetableGrid from "../../components/ui/TimetableGrid";
 import { TableSkeleton } from "../../components/ui/Skeleton";
+import EmptyState from "../../components/ui/EmptyState";
 import { useAuth } from "../../context/AuthContext";
 import { exportTimetablePDF } from "../../utils/pdfExport";
 
@@ -13,12 +14,14 @@ export default function StudentTimetable() {
   const { user } = useAuth();
   const [timetable, setTimetable] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [activeEntry, setActiveEntry] = useState(null);
 
   useEffect(() => {
     api
       .get("/timetables/student/me")
       .then(({ data }) => setTimetable(data.data))
+      .catch((err) => setError(err.response?.data?.message || "Unable to load your timetable."))
       .finally(() => setLoading(false));
   }, []);
 
@@ -53,6 +56,8 @@ export default function StudentTimetable() {
 
       {loading ? (
         <Card><TableSkeleton rows={6} /></Card>
+      ) : error ? (
+        <Card><EmptyState icon={CalendarClock} title="Timetable could not be loaded" description={error} /></Card>
       ) : (
         <TimetableGrid entries={entries} onEntryClick={setActiveEntry} />
       )}
