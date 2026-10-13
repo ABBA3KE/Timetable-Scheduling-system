@@ -22,6 +22,23 @@ export default function GenerateTimetable() {
     api.get("/sessions").then(({ data }) => setSessions(data.data));
   }, []);
 
+  useEffect(() => {
+    if (form.department && form.session && form.semester) {
+      api
+        .get("/timetables", { params: form })
+        .then(({ data }) => {
+          if (data.data) {
+            setTimetable(data.data);
+            if (data.data.generationStats) setStats(data.data.generationStats);
+          } else {
+            setTimetable(null);
+            setStats(null);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [form.department, form.session, form.semester]);
+
   const handleGenerate = async () => {
     if (!form.department || !form.session) {
       toast.error("Please select a department and academic session.");

@@ -20,17 +20,34 @@ export default function StudentDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const str = String(timeStr).trim().toUpperCase();
+    const match = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const meridiem = match[3];
+      if (meridiem === "PM" && hours < 12) hours += 12;
+      if (meridiem === "AM" && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    }
+    return 0;
+  };
+
   const entries = timetable?.entries || [];
   const uniqueCourses = [...new Map(entries.map((e) => [e.course?._id, e.course])).values()];
   const today = new Date().toLocaleDateString("en-US", { weekday: "long" });
-  const todaysClasses = entries.filter((e) => e.timeSlot?.day === today);
+  const todaysClasses = entries
+    .filter((e) => e.timeSlot?.day === today)
+    .sort((a, b) => parseTimeToMinutes(a.timeSlot?.startTime) - parseTimeToMinutes(b.timeSlot?.startTime));
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Welcome, {user?.fullName?.split(" ")[0]}</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          {user?.programme?.name} &middot; {user?.level?.name}
+          {user?.department?.name || user?.programme?.name || "Student"} &middot; {user?.level?.name || "All Levels"}
         </p>
       </div>
 

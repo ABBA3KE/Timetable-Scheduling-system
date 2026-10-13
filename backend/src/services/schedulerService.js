@@ -41,9 +41,14 @@ function classGroupKey(course) {
 
 function eligibleVenues(course, venues) {
   const studentCount = course.studentCount || 0;
-  return venues
-    .filter((v) => v.isActive !== false && v.capacity >= studentCount)
-    .sort((a, b) => a.capacity - b.capacity); // prefer tightest-fit venue first (better utilization)
+  const activeVenues = venues.filter((v) => v.isActive !== false);
+  const fittingVenues = activeVenues.filter((v) => v.capacity >= studentCount);
+  if (fittingVenues.length > 0) {
+    // Prefer tightest-fit venue first (better utilization)
+    return fittingVenues.sort((a, b) => a.capacity - b.capacity);
+  }
+  // Fallback: If studentCount exceeds all venue capacities, use active venues sorted by capacity descending (largest first)
+  return [...activeVenues].sort((a, b) => b.capacity - a.capacity);
 }
 
 export function generateTimetable({ courses, venues, timeSlots }) {
@@ -70,7 +75,8 @@ export function generateTimetable({ courses, venues, timeSlots }) {
   // Build the list of variables (one per required weekly session).
   const sessions = [];
   courses.forEach((course) => {
-    const count = Math.max(1, course.sessionsPerWeek || 1);
+    const rawCount = Number(course.sessionsPerWeek);
+    const count = Math.min(Math.max(1, isNaN(rawCount) ? 1 : rawCount), 5);
     const lecturer = course.lecturers?.[0]?._id || course.lecturers?.[0];
     for (let i = 0; i < count; i++) {
       sessions.push({
@@ -162,6 +168,7 @@ export function generateTimetable({ courses, venues, timeSlots }) {
     timeSlot: a.timeSlot._id,
     level: a.session.course.level?._id || a.session.course.level,
     programme: a.session.course.programme?._id || a.session.course.programme,
+    department: a.session.course.department?._id || a.session.course.department,
   }));
 
   const uniqueUnscheduled = [...new Set(unscheduled.map(String))];
@@ -192,18 +199,28 @@ export function detectClashes(entries) {
 
   entries.forEach((e) => {
     const slot = String(e.timeSlot?._id || e.timeSlot);
-    const lecKey = `${e.lecturer?._id || e.lecturer}::${slot}`;
-    const venKey = `${e.venue?._id || e.venue}::${slot}`;
-    const groupKey = `${e.level?._id || e.level}_${e.programme?._id || e.programme || "none"}::${slot}`;
+    const lec = e.lecturer?._id || e.lecturer;
+    const ven = e.venue?._id || e.venue;
+    const lvl = e.level?._id || e.level;
+    const prg = e.programme?._id || e.programme || "none";
 
-    if (byLecturer.has(lecKey)) clashes.push({ type: "lecturer", entries: [byLecturer.get(lecKey), e._id] });
-    else byLecturer.set(lecKey, e._id);
+    if (lec && slot) {
+      const lecKey = `${lec}::${slot}`;
+      if (byLecturer.has(lecKey)) clashes.push({ type: "lecturer", entries: [byLecturer.get(lecKey), e._id] });
+      else byLecturer.set(lecKey, e._id);
+    }
 
-    if (byVenue.has(venKey)) clashes.push({ type: "venue", entries: [byVenue.get(venKey), e._id] });
-    else byVenue.set(venKey, e._id);
+    if (ven && slot) {
+      const venKey = `${ven}::${slot}`;
+      if (byVenue.has(venKey)) clashes.push({ type: "venue", entries: [byVenue.get(venKey), e._id] });
+      else byVenue.set(venKey, e._id);
+    }
 
-    if (byGroup.has(groupKey)) clashes.push({ type: "student", entries: [byGroup.get(groupKey), e._id] });
-    else byGroup.set(groupKey, e._id);
+    if (lvl && slot) {
+      const groupKey = `${lvl}_${prg}::${slot}`;
+      if (byGroup.has(groupKey)) clashes.push({ type: "student", entries: [byGroup.get(groupKey), e._id] });
+      else byGroup.set(groupKey, e._id);
+    }
   });
 
   return clashes;

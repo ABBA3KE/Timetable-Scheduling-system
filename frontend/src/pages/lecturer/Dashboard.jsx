@@ -18,16 +18,38 @@ export default function LecturerDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const str = String(timeStr).trim().toUpperCase();
+    const match = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const meridiem = match[3];
+      if (meridiem === "PM" && hours < 12) hours += 12;
+      if (meridiem === "AM" && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    }
+    return 0;
+  };
+
   const uniqueCourses = [...new Map(entries.map((e) => [e.course?._id, e.course])).values()];
   const uniqueVenues = [...new Set(entries.map((e) => e.venue?._id))];
   const today = new Date().toLocaleDateString("en-US", { weekday: "long" });
-  const todaysClasses = entries.filter((e) => e.timeSlot?.day === today);
+  const todaysClasses = entries
+    .filter((e) => e.timeSlot?.day === today)
+    .sort((a, b) => parseTimeToMinutes(a.timeSlot?.startTime) - parseTimeToMinutes(b.timeSlot?.startTime));
+
+  const lecturerName = user?.fullName || "Lecturer";
+  const titleDisplay = user?.title ? `${user.title} ` : "";
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Welcome, {user?.title} {user?.fullName?.split(" ").slice(-1)[0]}</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Here's your teaching overview for this semester.</p>
+        <h1 className="text-2xl font-bold">Welcome, {titleDisplay}{lecturerName}</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {user?.department?.name || "Teaching Faculty"} &middot; Teaching overview for this semester
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

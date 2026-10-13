@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import Department from "../models/Department.js";
+import Faculty from "../models/Faculty.js";
 import Programme from "../models/Programme.js";
 import Level from "../models/Level.js";
 import { generateToken } from "../utils/generateToken.js";
@@ -25,6 +26,16 @@ const publicUser = (user) => ({
   officeHours: user.officeHours,
   isClassRep: user.isClassRep,
 });
+
+export const populateUserQuery = (query) =>
+  query
+    .populate({
+      path: "department",
+      select: "name code faculty",
+      populate: { path: "faculty", select: "name code" },
+    })
+    .populate("programme", "name code")
+    .populate("level", "name code");
 
 export const getRegistrationOptions = asyncHandler(async (_req, res) => {
   const [departments, programmes, levels] = await Promise.all([
@@ -92,10 +103,12 @@ export const register = asyncHandler(async (req, res) => {
   await user.save();
   await logActivity(user._id, "REGISTERED", "User", user._id, `Self-registered as ${role}`);
 
+  const populated = await populateUserQuery(User.findById(user._id));
+
   res.status(201).json({
     success: true,
     token: generateToken(user._id, user.role),
-    user: publicUser(user),
+    user: publicUser(populated),
   });
 });
 
@@ -114,19 +127,18 @@ export const login = asyncHandler(async (req, res) => {
   await user.save();
   await logActivity(user._id, "LOGIN", "User", user._id, `${user.role} logged in`, req.ip);
 
+  const populated = await populateUserQuery(User.findById(user._id));
+
   res.json({
     success: true,
     token: generateToken(user._id, user.role),
-    user: publicUser(user),
+    user: publicUser(populated),
   });
 });
 
 // @route GET /api/auth/me
 export const getMe = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
-    .populate("department", "name code")
-    .populate("programme", "name code")
-    .populate("level", "name code");
+  const user = await populateUserQuery(User.findById(req.user._id));
   res.json({ success: true, user: publicUser(user) });
 });
 
@@ -138,10 +150,12 @@ export const updateProfile = asyncHandler(async (req, res) => {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   });
 
-  const user = await User.findByIdAndUpdate(req.user._id, updates, {
-    new: true,
-    runValidators: true,
-  });
+  const user = await populateUserQuery(
+    User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+      runValidators: true,
+    })
+  );
   res.json({ success: true, user: publicUser(user) });
 });
 

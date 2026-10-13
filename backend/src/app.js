@@ -7,6 +7,7 @@ import mongoSanitize from "express-mongo-sanitize";
 
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
+import "./models/index.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";

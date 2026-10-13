@@ -10,8 +10,8 @@ const courseSchema = new mongoose.Schema(
     level: { type: mongoose.Schema.Types.ObjectId, ref: "Level", required: true },
     semester: { type: String, enum: ["First Semester", "Second Semester"], required: true },
     lecturers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    studentCount: { type: Number, default: 0 }, // expected class size, for room-capacity constraint
-    sessionsPerWeek: { type: Number, default: 1 }, // how many time slots needed per week
+    studentCount: { type: Number, default: 0, min: 0 }, // expected class size, for room-capacity constraint
+    sessionsPerWeek: { type: Number, default: 1, min: 1, max: 7 }, // how many time slots needed per week
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

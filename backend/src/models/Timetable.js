@@ -5,11 +5,12 @@ import mongoose from "mongoose";
 const entrySchema = new mongoose.Schema(
   {
     course: { type: mongoose.Schema.Types.ObjectId, ref: "Course", required: true },
-    lecturer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    lecturer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     venue: { type: mongoose.Schema.Types.ObjectId, ref: "Venue", required: true },
     timeSlot: { type: mongoose.Schema.Types.ObjectId, ref: "TimeSlot", required: true },
     level: { type: mongoose.Schema.Types.ObjectId, ref: "Level", required: true },
     programme: { type: mongoose.Schema.Types.ObjectId, ref: "Programme" },
+    department: { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
   },
   { _id: true }
 );

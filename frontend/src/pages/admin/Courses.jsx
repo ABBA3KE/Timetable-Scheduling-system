@@ -68,12 +68,17 @@ export default function Courses() {
 
   const handleSave = async () => {
     setSaving(true);
+    const sanitizedForm = {
+      ...form,
+      sessionsPerWeek: Math.min(Math.max(1, Number(form.sessionsPerWeek) || 1), 5),
+      studentCount: Math.max(0, Number(form.studentCount) || 0),
+    };
     try {
       if (activeCourse) {
-        await api.put(`/courses/${activeCourse._id}`, form);
+        await api.put(`/courses/${activeCourse._id}`, sanitizedForm);
         toast.success("Course updated");
       } else {
-        await api.post("/courses", form);
+        await api.post("/courses", sanitizedForm);
         toast.success("Course created");
       }
       setModalOpen(false);

@@ -29,13 +29,25 @@ export const getUsers = asyncHandler(async (req, res) => {
   res.json({ success: true, count: users.length, data: users });
 });
 
+// Helper to sanitize ObjectId fields from client (e.g. empty strings)
+const sanitizeUserPayload = (body) => {
+  const payload = { ...body };
+  ["department", "programme", "level"].forEach((key) => {
+    if (payload[key] === "" || payload[key] === null) {
+      delete payload[key];
+    }
+  });
+  return payload;
+};
+
 // @route POST /api/users   (admin creates lecturer/student/admin accounts)
 export const createUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const exists = await User.findOne({ email: email?.toLowerCase() });
   if (exists) throw new ApiError(400, "A user with this email already exists");
 
-  const user = await User.create({ ...req.body, password: password || "changeme123" });
+  const payload = sanitizeUserPayload(req.body);
+  const user = await User.create({ ...payload, password: password || "changeme123" });
   await logActivity(req.user._id, "CREATED_USER", "User", user._id, `Created ${user.role} account`);
 
   await notifyUsers({
@@ -45,20 +57,42 @@ export const createUser = asyncHandler(async (req, res) => {
     type: "system",
   });
 
-  const safe = user.toObject();
+  const populated = await User.findById(user._id)
+    .populate("department", "name code")
+    .populate("programme", "name code")
+    .populate("level", "name code");
+
+  const safe = populated.toObject();
   delete safe.password;
   res.status(201).json({ success: true, data: safe });
 });
 
 // @route PUT /api/users/:id
 export const updateUser = asyncHandler(async (req, res) => {
-  const updates = { ...req.body };
+  const updates = sanitizeUserPayload(req.body);
   delete updates.password; // password changes go through the dedicated endpoint
 
-  const user = await User.findByIdAndUpdate(req.params.id, updates, {
+  // If department/programme/level are explicitly empty string, unset them
+  const unset = {};
+  ["department", "programme", "level"].forEach((key) => {
+    if (req.body[key] === "") {
+      unset[key] = 1;
+    }
+  });
+
+  const updateOp = { $set: updates };
+  if (Object.keys(unset).length > 0) {
+    updateOp.$unset = unset;
+  }
+
+  const user = await User.findByIdAndUpdate(req.params.id, updateOp, {
     new: true,
     runValidators: true,
-  });
+  })
+    .populate("department", "name code")
+    .populate("programme", "name code")
+    .populate("level", "name code");
+
   if (!user) throw new ApiError(404, "User not found");
   await logActivity(req.user._id, "UPDATED_USER", "User", user._id);
   res.json({ success: true, data: user });

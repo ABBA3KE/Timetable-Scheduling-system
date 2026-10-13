@@ -9,17 +9,69 @@ import { generateTimetable, detectClashes } from "../services/schedulerService.j
 import { logActivity } from "./activityLogController.js";
 import { notifyUsers } from "../services/notificationService.js";
 
+const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const str = String(timeStr).trim().toUpperCase();
+  const match = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const meridiem = match[3];
+    if (meridiem === "PM" && hours < 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  return 0;
+};
+
+const sortEntriesChronologically = (entries) => {
+  return [...entries].sort((a, b) => {
+    const dayA = a.timeSlot?.day || "";
+    const dayB = b.timeSlot?.day || "";
+    const idxA = DAY_ORDER.indexOf(dayA);
+    const idxB = DAY_ORDER.indexOf(dayB);
+    const dayDiff = (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+    if (dayDiff !== 0) return dayDiff;
+
+    const startA = parseTimeToMinutes(a.timeSlot?.startTime);
+    const startB = parseTimeToMinutes(b.timeSlot?.startTime);
+    if (startA !== startB) return startA - startB;
+
+    const endA = parseTimeToMinutes(a.timeSlot?.endTime);
+    const endB = parseTimeToMinutes(b.timeSlot?.endTime);
+    return endA - endB;
+  });
+};
+
 const populateTimetable = (query) =>
   query
-    .populate("department", "name code")
-    .populate("session", "name")
-    .populate("generatedBy", "fullName")
-    .populate({ path: "entries.course", select: "title code units level programme department" })
-    .populate({ path: "entries.lecturer", select: "fullName title email phone officeLocation officeHours" })
-    .populate({ path: "entries.venue", select: "name code capacity building" })
+    .populate({
+      path: "department",
+      select: "name code faculty",
+      populate: { path: "faculty", select: "name code" },
+    })
+    .populate("session", "name isActive")
+    .populate("generatedBy", "fullName email")
+    .populate({
+      path: "entries.course",
+      select: "title code units level programme department studentCount sessionsPerWeek lecturers",
+      populate: [
+        { path: "department", select: "name code" },
+        { path: "lecturers", select: "fullName title email phone staffId" },
+      ],
+    })
+    .populate({
+      path: "entries.lecturer",
+      select: "fullName title email phone officeLocation officeHours staffId department",
+      populate: { path: "department", select: "name code" },
+    })
+    .populate({ path: "entries.venue", select: "name code capacity building type" })
     .populate({ path: "entries.timeSlot", select: "day startTime endTime label" })
     .populate({ path: "entries.level", select: "name code" })
-    .populate({ path: "entries.programme", select: "name code" });
+    .populate({ path: "entries.programme", select: "name code" })
+    .populate({ path: "entries.department", select: "name code" });
 
 // @route POST /api/timetables/generate   { department, session, semester }
 export const generateForDepartment = asyncHandler(async (req, res) => {
@@ -32,7 +84,8 @@ export const generateForDepartment = asyncHandler(async (req, res) => {
     Course.find({ department, semester, isActive: true })
       .populate("lecturers", "_id fullName")
       .populate("level", "_id")
-      .populate("programme", "_id"),
+      .populate("programme", "_id")
+      .populate("department", "_id name code"),
     Venue.find({ isActive: true }),
     TimeSlot.find(),
   ]);
@@ -83,8 +136,12 @@ export const getTimetable = asyncHandler(async (req, res) => {
 // @route GET /api/timetables/all   (admin listing)
 export const getAllTimetables = asyncHandler(async (req, res) => {
   const timetables = await Timetable.find()
-    .populate("department", "name code")
-    .populate("session", "name")
+    .populate({
+      path: "department",
+      select: "name code faculty",
+      populate: { path: "faculty", select: "name code" },
+    })
+    .populate("session", "name isActive")
     .sort({ createdAt: -1 });
   res.json({ success: true, data: timetables });
 });
@@ -105,8 +162,13 @@ export const publishTimetable = asyncHandler(async (req, res) => {
   await logActivity(req.user._id, "PUBLISHED_TIMETABLE", "Timetable", timetable._id);
 
   // Notify every lecturer and student tied to this department's active timetable
-  const lecturerIds = [...new Set(timetable.entries.map((e) => String(e.lecturer?._id || e.lecturer)))];
-  const students = await User.find({ role: "student", department: timetable.department._id || timetable.department }).select("_id");
+  const lecturerIds = [...new Set(timetable.entries.map((e) => String(e.lecturer?._id || e.lecturer)).filter(Boolean))];
+  const targetDeptId = timetable.department?._id || timetable.department;
+
+  const students = await User.find({
+    role: "student",
+    $or: [{ department: targetDeptId }],
+  }).select("_id");
 
   await notifyUsers({
     recipients: [...lecturerIds, ...students.map((s) => s._id)],
@@ -115,7 +177,8 @@ export const publishTimetable = asyncHandler(async (req, res) => {
     type: "timetable",
   });
 
-  res.json({ success: true, data: timetable });
+  const refreshed = await populateTimetable(Timetable.findById(timetable._id));
+  res.json({ success: true, data: refreshed });
 });
 
 // @route PUT /api/timetables/:id/entries/:entryId   (manual admin edit)
@@ -151,15 +214,37 @@ export const getClashes = asyncHandler(async (req, res) => {
 
 // @route GET /api/timetables/lecturer/me
 export const getMyLecturerTimetable = asyncHandler(async (req, res) => {
+  const lecturerId = String(req.user._id);
+
+  // Retrieve all published timetables
   const timetables = await populateTimetable(
-    Timetable.find({ status: "published" })
+    Timetable.find({ status: "published" }).sort({ createdAt: -1 })
   );
-  const entries = timetables.flatMap((t) =>
-    t.entries
-      .filter((e) => String(e.lecturer?._id || e.lecturer) === String(req.user._id))
-      .map((e) => ({ ...e.toObject(), semester: t.semester, session: t.session }))
-  );
-  res.json({ success: true, data: entries });
+
+  const matchedEntries = [];
+
+  timetables.forEach((t) => {
+    t.entries.forEach((e) => {
+      const entryLecturerId = e.lecturer?._id ? String(e.lecturer._id) : e.lecturer ? String(e.lecturer) : null;
+      const courseLecturerIds = (e.course?.lecturers || []).map((l) => String(l._id || l));
+      const isAssigned = entryLecturerId === lecturerId || (!entryLecturerId && courseLecturerIds.includes(lecturerId));
+
+      if (isAssigned) {
+        const raw = e.toObject();
+        matchedEntries.push({
+          ...raw,
+          timetableId: t._id,
+          semester: t.semester,
+          session: t.session,
+          department: raw.department || t.department || e.course?.department,
+          lecturer: raw.lecturer || req.user,
+        });
+      }
+    });
+  });
+
+  const sorted = sortEntriesChronologically(matchedEntries);
+  res.json({ success: true, count: sorted.length, data: sorted });
 });
 
 // @route GET /api/timetables/search?department=&level=&semester=&lecturer=&venue=&day=&course=
@@ -170,10 +255,16 @@ export const searchEntries = asyncHandler(async (req, res) => {
   if (department) filter.department = department;
   if (semester) filter.semester = semester;
 
-  const timetables = await populateTimetable(Timetable.find(filter));
+  const timetables = await populateTimetable(Timetable.find(filter).sort({ createdAt: -1 }));
 
   let entries = timetables.flatMap((t) =>
-    t.entries.map((e) => ({ ...e.toObject(), semester: t.semester, session: t.session, department: t.department }))
+    t.entries.map((e) => ({
+      ...e.toObject(),
+      timetableId: t._id,
+      semester: t.semester,
+      session: t.session,
+      department: e.department || t.department || e.course?.department,
+    }))
   );
 
   if (level) entries = entries.filter((e) => String(e.level?._id || e.level) === level);
@@ -187,19 +278,97 @@ export const searchEntries = asyncHandler(async (req, res) => {
     );
   }
 
-  res.json({ success: true, count: entries.length, data: entries });
+  const sorted = sortEntriesChronologically(entries);
+  res.json({ success: true, count: sorted.length, data: sorted });
 });
 
 // @route GET /api/timetables/student/me
 export const getMyStudentTimetable = asyncHandler(async (req, res) => {
-  const student = await User.findById(req.user._id);
-  const timetable = await populateTimetable(
-    Timetable.findOne({ department: student.department, status: "published" }).sort({ createdAt: -1 })
-  );
-  if (!timetable) return res.json({ success: true, data: null });
+  const student = await User.findById(req.user._id)
+    .populate({
+      path: "department",
+      select: "name code faculty",
+      populate: { path: "faculty", select: "name code" },
+    })
+    .populate("programme", "name code department")
+    .populate("level", "name code");
 
-  const entries = timetable.entries.filter(
-    (e) => String(e.level?._id || e.level) === String(student.level)
+  if (!student) throw new ApiError(404, "Student record not found");
+
+  const studentLevelId = student.level?._id ? String(student.level._id) : student.level ? String(student.level) : null;
+  const studentDeptId = student.department?._id
+    ? String(student.department._id)
+    : student.department
+    ? String(student.department)
+    : student.programme?.department?._id
+    ? String(student.programme.department._id)
+    : student.programme?.department
+    ? String(student.programme.department)
+    : null;
+  const studentProgId = student.programme?._id ? String(student.programme._id) : student.programme ? String(student.programme) : null;
+
+  // Retrieve ALL published timetables
+  const timetables = await populateTimetable(
+    Timetable.find({ status: "published" }).sort({ createdAt: -1 })
   );
-  res.json({ success: true, data: { ...timetable.toObject(), entries } });
+
+  if (!timetables.length) {
+    return res.json({ success: true, data: null, entries: [] });
+  }
+
+  const matchedEntries = [];
+  let primaryTimetable = null;
+
+  timetables.forEach((t) => {
+    const tDeptId = t.department?._id ? String(t.department._id) : String(t.department);
+    const isDeptMatch = !studentDeptId || tDeptId === studentDeptId;
+
+    if (isDeptMatch && !primaryTimetable) {
+      primaryTimetable = t;
+    }
+
+    t.entries.forEach((e) => {
+      const entryLevelId = e.level?._id ? String(e.level._id) : String(e.level);
+      const entryDeptId = e.department?._id
+        ? String(e.department._id)
+        : e.course?.department?._id
+        ? String(e.course.department._id)
+        : tDeptId;
+      const entryProgId = e.programme?._id ? String(e.programme._id) : e.programme ? String(e.programme) : null;
+
+      // Filter by student level
+      const levelMatches = !studentLevelId || entryLevelId === studentLevelId;
+
+      // Filter by student department (or shared departmental course)
+      const deptMatches = !studentDeptId || entryDeptId === studentDeptId || tDeptId === studentDeptId;
+
+      // Filter by programme if course/entry is programme-specific
+      const progMatches = !entryProgId || !studentProgId || entryProgId === studentProgId;
+
+      if (levelMatches && deptMatches && progMatches) {
+        matchedEntries.push({
+          ...e.toObject(),
+          timetableId: t._id,
+          semester: t.semester,
+          session: t.session,
+          department: e.department || t.department || e.course?.department,
+        });
+      }
+    });
+  });
+
+  if (!primaryTimetable && timetables.length > 0) {
+    primaryTimetable = timetables[0];
+  }
+
+  const sortedEntries = sortEntriesChronologically(matchedEntries);
+
+  if (!primaryTimetable && sortedEntries.length === 0) {
+    return res.json({ success: true, data: null, entries: [] });
+  }
+
+  const responseData = primaryTimetable ? primaryTimetable.toObject() : {};
+  responseData.entries = sortedEntries;
+
+  res.json({ success: true, data: responseData });
 });
